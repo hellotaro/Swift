@@ -25,6 +25,144 @@ typedef struct {
 } pixel;
 
 kernel void
+ConvertToAlicescale(texture2d<half, access::read>  inTexture  [[texture(AAPLTextureIndexInput)]],
+           texture2d<half, access::write> outTexture [[texture(AAPLTextureIndexOutput)]],
+           device uint                    *alphaLocation [[ buffer(0) ]],
+           uint2                          gid         [[thread_position_in_grid]])
+{
+    // Check if the pixel is within the bounds of the output texture
+    if((gid.x >= outTexture.get_width()) || (gid.y >= outTexture.get_height()))
+    {
+        // Return early if the pixel is out of bounds
+        return;
+    }
+    
+    // 画像のピクセルデータを取得
+    half4 inColor  = inTexture.read(gid);
+    
+    //pixel inputRGB;
+    pixel inRGB;
+    
+    // alpha値以外のピクセルデータ(Red, Green, Blue)を代入
+    switch (alphaLocation[0]) {
+            
+        case AAPLAlphaLocationFirst:
+            
+            inRGB = pixel{inColor[1], inColor[2], inColor[3]};
+            break;
+            
+        case AAPLAlphaLocationLast:
+            
+            inRGB = pixel{inColor[0], inColor[1], inColor[2]};
+            break;
+            
+        default:
+            return;
+    }
+    
+    // RGB値を編集 ---------------------------
+    half red = inRGB.red;
+    half green = inRGB.green;
+    half blue = inRGB.blue;
+    
+    half rawHue;
+    half refHue = 25.0;
+    
+    half maxRGB = max3(red, green, blue);
+    half minRGB = min3(red, green, blue);
+    
+    if (maxRGB == minRGB) {
+        
+        rawHue = 0.0;
+        
+    } else {
+        
+        if (maxRGB == red) {
+            
+            rawHue = green - blue;
+            rawHue = rawHue / (maxRGB - minRGB);
+            rawHue = rawHue * 60.0;
+            
+            if (rawHue < 0.0) {
+                rawHue = rawHue + 360.0;
+            }
+            
+        } else if (maxRGB == green) {
+            
+            rawHue = blue - red;
+            rawHue = rawHue / (maxRGB - minRGB);
+            rawHue = rawHue * 60.0;
+            rawHue = rawHue + 120.0;
+            
+            if (rawHue < 0.0) {
+                rawHue = rawHue + 360.0;
+            }
+            
+        } else {
+            
+            rawHue = red - green;
+            rawHue = rawHue / (maxRGB - minRGB);
+            rawHue = rawHue * 60.0;
+            rawHue = rawHue + 240.0;
+            
+            if (rawHue < 0.0) {
+                rawHue = rawHue + 360.0;
+            }
+            
+        }
+        
+    }
+    
+    if (rawHue >= 180.0 && rawHue <= 240.0) {
+        
+        refHue = 194.0;
+        
+        blue = maxRGB;
+        red = minRGB;
+        
+        green = 240.0 - refHue;
+        green = green / 60.0;
+        green = green * (maxRGB - minRGB);
+        green = green + minRGB;
+        
+    } else {
+        
+        red = maxRGB;
+        blue = minRGB;
+        
+        green = refHue / 60.0;
+        green = green * (maxRGB - minRGB);
+        green = green + minRGB;
+        
+    }
+    
+    // --------------------------------------
+    
+    // 編集したRGB値を含むピクセルデータを代入する変数
+    pixel outRGB = pixel{red, green, blue};
+    
+    switch (alphaLocation[0]) {
+            
+        case AAPLAlphaLocationFirst:
+            
+            outTexture.write(half4(inColor[0], outRGB.red, outRGB.green, outRGB.blue), gid);
+            break;
+            
+        case AAPLAlphaLocationLast:
+            
+            outTexture.write(half4(outRGB.red, outRGB.green, outRGB.blue, inColor[3]), gid);
+            break;
+            
+        default:
+            
+            outTexture.write(inColor, gid);
+            break;
+            
+    }
+    
+}
+
+kernel void
 ConvertToPeachscale(texture2d<half, access::read>  inTexture  [[texture(AAPLTextureIndexInput)]],
            texture2d<half, access::write> outTexture [[texture(AAPLTextureIndexOutput)]],
            device uint                    *alphaLocation [[ buffer(0) ]],
@@ -41,19 +179,19 @@ ConvertToPeachscale(texture2d<half, access::read>  inTexture  [[texture(AAPLText
     half4 inColor  = inTexture.read(gid);
     
     //pixel inputRGB;
-    half3 inRGB;
+    pixel inRGB;
     
     // alpha値以外のピクセルデータ(Red, Green, Blue)を代入
     switch (alphaLocation[0]) {
             
         case AAPLAlphaLocationFirst:
             
-            inRGB = half3(inColor[1], inColor[2], inColor[3]);
+            inRGB = pixel{inColor[1], inColor[2], inColor[3]};
             break;
             
         case AAPLAlphaLocationLast:
             
-            inRGB = half3(inColor[0], inColor[1], inColor[2]);
+            inRGB = pixel{inColor[0], inColor[1], inColor[2]};
             break;
             
         default:
@@ -61,9 +199,9 @@ ConvertToPeachscale(texture2d<half, access::read>  inTexture  [[texture(AAPLText
     }
     
     // RGB値を編集 ---------------------------
-    half red = inRGB[0];
-    half green = inRGB[1];
-    half blue = inRGB[2];
+    half red = inRGB.red;
+    half green = inRGB.green;
+    half blue = inRGB.blue;
     
     half rawHue;
     half refHue = 339.0;
@@ -81,39 +219,39 @@ ConvertToPeachscale(texture2d<half, access::read>  inTexture  [[texture(AAPLText
             
             rawHue = green - blue;
             rawHue = rawHue / (maxRGB - minRGB);
-            rawHue = rawHue * 60;
+            rawHue = rawHue * 60.0;
             
-            if (rawHue < 0) {
-                rawHue = rawHue + 360;
+            if (rawHue < 0.0) {
+                rawHue = rawHue + 360.0;
             }
             
         } else if (maxRGB == green) {
             
             rawHue = blue - red;
             rawHue = rawHue / (maxRGB - minRGB);
-            rawHue = rawHue * 60;
-            rawHue = rawHue + 120;
+            rawHue = rawHue * 60.0;
+            rawHue = rawHue + 120.0;
             
-            if (rawHue < 0) {
-                rawHue = rawHue + 360;
+            if (rawHue < 0.0) {
+                rawHue = rawHue + 360.0;
             }
             
         } else {
             
             rawHue = red - green;
             rawHue = rawHue / (maxRGB - minRGB);
-            rawHue = rawHue * 60;
-            rawHue = rawHue + 240;
+            rawHue = rawHue * 60.0;
+            rawHue = rawHue + 240.0;
             
-            if (rawHue < 0) {
-                rawHue = rawHue + 360;
+            if (rawHue < 0.0) {
+                rawHue = rawHue + 360.0;
             }
             
         }
         
     }
     
-    if (rawHue >= 0 && rawHue <= 60) {
+    if (rawHue >= 0.0 && rawHue <= 60.0) {
         
         refHue = 25.0;
         
